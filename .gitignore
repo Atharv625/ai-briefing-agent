@@ -1,0 +1,40 @@
+# Secrets - NEVER commit these
+.env
+config/credentials.json
+config/token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Google OAuth secrets
+lambda-package/config/token.json
+lambda-package/config/credentials.json
+

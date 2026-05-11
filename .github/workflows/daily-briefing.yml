@@ -1,0 +1,92 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# .github/workflows/daily-briefing.yml
+# Runs the briefing every day at 7:00 AM IST (1:30 AM UTC)
+# Uses GitHub Actions as a free cron scheduler
+# ══════════════════════════════════════════════════════════════════════════════
+
+name: Daily AI Briefing
+
+on:
+  push:
+    branches:
+      - main
+
+  # Allow manual triggering from GitHub Actions UI (for testing)
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Enable debug logging"
+        required: false
+        default: "false"
+        type: boolean
+
+jobs:
+  run-briefing:
+    name: Generate & Send Daily Briefing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # ── Python setup ──────────────────────────────────────────────────────
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── Restore OAuth2 token ───────────────────────────────────────────────
+      # The token.json is stored as a GitHub Secret (base64-encoded JSON)
+      # First time setup: run oauth locally, base64-encode token.json, add as secret
+      - name: Restore Google OAuth2 token
+        run: |
+          mkdir -p config
+          echo "${{ secrets.GOOGLE_TOKEN_JSON }}" | base64 -d > config/token.json
+          echo "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" | base64 -d > config/credentials.json
+
+      # ── Write .env ────────────────────────────────────────────────────────
+      - name: Create .env from secrets
+        run: |
+          cat > .env << EOF
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL=gemini-2.5-flash
+          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+          ENVIRONMENT=production
+          LOG_LEVEL=${{ inputs.debug == 'true' && 'DEBUG' || 'INFO' }}
+          TIMEZONE=Asia/Kolkata
+          EOF
+
+      # ── Run briefing ──────────────────────────────────────────────────────
+      - name: Run Daily Briefing
+        run: python main.py --run-now
+
+      # ── Update token (if refreshed) ───────────────────────────────────────
+      # Re-encode and update secret if token was refreshed during the run
+      # Requires ACTIONS_TOKEN secret with repo:write scope
+      - name: Update OAuth2 token secret
+        if: always()
+        run: |
+          if [ -f config/token.json ]; then
+            NEW_TOKEN=$(base64 -w 0 config/token.json)
+            echo "Token updated (length: ${#NEW_TOKEN})"
+            # To auto-update the secret, use gh CLI:
+            # gh secret set GOOGLE_TOKEN_JSON --body "$NEW_TOKEN"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.ACTIONS_TOKEN || '' }}
+
+      # ── Cleanup sensitive files ────────────────────────────────────────────
+      - name: Cleanup credentials
+        if: always()
+        run: |
+          rm -f config/token.json config/credentials.json .env
+          echo "Credentials cleaned up."
